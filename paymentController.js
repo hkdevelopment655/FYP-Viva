@@ -149,3 +149,33 @@ export const verifyPayment = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+export const initiatePayment = async (req, res) => {
+  try {
+    const { orderId, amount, phone, method } = req.body;
+    
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Payment initiated successfully (mock).',
+      orderId,
+      amount,
+      method: method || 'easypaisa'
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const paymentCallback = async (req, res) => {
+  try {
+    console.log('Payment callback received:', req.body);
+    res.json({ success: true, message: 'Callback received successfully' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
