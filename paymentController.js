@@ -69,29 +69,17 @@ export const initiatePayFastPayment = async (req, res) => {
     const order = await Order.findById(orderId);
     if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
 
-    // Explicit valid working values loading directly
+    // Force values directly if env has formatting problems
     const merchantId = (process.env.PAYFAST_MERCHANT_ID || '10049693').trim();
     const merchantKey = (process.env.PAYFAST_MERCHANT_KEY || 'tk3co8d1lltic').trim();
 
     const amountStr = order.totalPrice.toFixed(2);
-    const itemNameStr = `SmartAI-Order-${orderId}`;
+    const itemNameStr = `SmartAI Order ${orderId}`;
     const returnUrlStr = `${process.env.CLIENT_URL || 'http://localhost:5173'}/checkout?step=2&orderId=${orderId}` + (order.groupCartId ? `&groupCartId=${order.groupCartId}` : '');
     const cancelUrlStr = `${process.env.CLIENT_URL || 'http://localhost:5173'}/checkout` + (order.groupCartId ? `?groupCartId=${order.groupCartId}` : '');
     const mPaymentIdStr = orderId.toString();
 
-    // STRICT EXPLICIT URL STRINGS FOR SIGNATURE GENERATION (NO LOOPS)
-    const signatureString = 
-      `merchant_id=${encodeURIComponent(merchantId).replace(/%20/g, '+')}&` +
-      `merchant_key=${encodeURIComponent(merchantKey).replace(/%20/g, '+')}&` +
-      `return_url=${encodeURIComponent(returnUrlStr).replace(/%20/g, '+')}&` +
-      `cancel_url=${encodeURIComponent(cancelUrlStr).replace(/%20/g, '+')}&` +
-      `m_payment_id=${encodeURIComponent(mPaymentIdStr).replace(/%20/g, '+')}&` +
-      `amount=${encodeURIComponent(amountStr).replace(/%20/g, '+')}&` +
-      `item_name=${encodeURIComponent(itemNameStr).replace(/%20/g, '+')}`;
-
-    // MD5 Signature calculation
-    const signature = crypto.createHash('md5').update(signatureString).digest('hex');
-
+    // Construct cleaner object mapping for direct lookup
     const payfastData = {
       merchant_id: merchantId,
       merchant_key: merchantKey,
@@ -99,13 +87,38 @@ export const initiatePayFastPayment = async (req, res) => {
       cancel_url: cancelUrlStr,
       m_payment_id: mPaymentIdStr,
       amount: amountStr,
-      item_name: itemNameStr,
-      signature: signature
+      item_name: itemNameStr
     };
 
-    console.log("--- FINAL PRODUCTION SIGNATURE VERIFICATION ---");
-    console.log("String hashed:", signatureString);
-    console.log("Hash created:", signature);
+    // PayFast specific custom parameter ordering string assembly
+    const orderedKeys = [
+      'merchant_id',
+      'merchant_key',
+      'return_url',
+      'cancel_url',
+      'm_payment_id',
+      'amount',
+      'item_name'
+    ];
+
+    let signatureString = '';
+    orderedKeys.forEach((key) => {
+      if (payfastData[key] !== undefined && payfastData[key] !== '') {
+        // Safe standard plain text formatting before calculation matching browser runtime formats
+        signatureString += `${key}=${encodeURIComponent(payfastData[key].toString()).replace(/%20/g, '+')}&`;
+      }
+    });
+
+    if (signatureString.endsWith('&')) {
+      signatureString = signatureString.slice(0, -1);
+    }
+
+    // Generate MD5 standard hex token hash mapping
+    const signature = crypto.createHash('md5').update(signatureString).digest('hex');
+    payfastData.signature = signature;
+
+    console.log("Hashed String Structure:", signatureString);
+    console.log("Calculated MD5 Token:", signature);
 
     res.json({
       success: true,
