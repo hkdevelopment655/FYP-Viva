@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { CheckCircle, Phone, MapPin, Loader } from 'lucide-react'
+import { CheckCircle, MapPin, Loader } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Navbar from '../components/layout/Navbar'
 import { useCartStore } from '../context/cartStore'
@@ -91,7 +91,6 @@ export default function CheckoutPage() {
     return v
   }
 
-  // Support for Group Cart Checkout & PayFast Redirect Return
   const queryParams = new URLSearchParams(window.location.search)
   const groupCartId = queryParams.get('groupCartId')
   const [groupCart, setGroupCart] = useState(null)
@@ -103,7 +102,7 @@ export default function CheckoutPage() {
       setStep(2)
       setOrderId(returnOrderId)
     }
-  }, [])
+  }, [queryParams])
 
   useEffect(() => {
     if (groupCartId) {
@@ -168,7 +167,6 @@ export default function CheckoutPage() {
       })
       setOrderId(res.data.order._id)
 
-      // Mark group cart share as paid for this logged-in member
       if (groupCartId) {
         await api.post(`/group-cart/${groupCartId}/pay-share`)
       }
@@ -182,10 +180,10 @@ export default function CheckoutPage() {
     }
   }
 
+  // FIXED PAYFAST INTERACTION FLOW
   const handleCardPayment = async (e) => {
     e.preventDefault()
 
-    // Trigger validation for all fields
     const nameErr = validateField('name', card.name)
     const numberErr = validateField('number', card.number)
     const expiryErr = validateField('expiry', card.expiry)
@@ -200,36 +198,33 @@ export default function CheckoutPage() {
       const oid = await createOrder()
       if (!oid) return
       
-      const response = await api.post('/get-payment-hash', {
-        amount: grandTotal.toFixed(2),
-        item_name: `SmartAI-Order-${oid}`,
-        orderId: oid,
-        return_url: `${window.location.origin}/checkout?step=2&orderId=${oid}` + (groupCartId ? `&groupCartId=${groupCartId}` : ''),
-        cancel_url: `${window.location.origin}/checkout` + (groupCartId ? `?groupCartId=${groupCartId}` : '')
-      })
+      // Hit correct endpoint specified in payment routes
+      const response = await api.post('/payment/initiate', { orderId: oid })
 
-      const { merchant_id, amount, item_name, return_url, cancel_url, m_payment_id, signature } = response.data
+      if (response.data.success) {
+        const { paymentUrl, payload } = response.data
 
-      // Create a hidden form and submit it to redirect the user to PayFast Sandbox
-      const form = document.createElement('form')
-      form.method = 'POST'
-      form.action = 'https://sandbox.payfast.co.za/eng/process' // Sandbox URL
-      form.style.display = 'none'
+        // Dynamic hidden form definition matching backend structure completely
+        const form = document.createElement('form')
+        form.method = 'POST'
+        form.action = paymentUrl
+        form.style.display = 'none'
 
-      const fields = { merchant_id, amount, item_name, return_url, cancel_url, m_payment_id, signature }
-      
-      for (const key in fields) {
-        if (fields[key] !== undefined && fields[key] !== '') {
-          const input = document.createElement('input')
-          input.type = 'hidden'
-          input.name = key
-          input.value = fields[key]
-          form.appendChild(input)
+        for (const key in payload) {
+          if (payload[key] !== undefined && payload[key] !== '') {
+            const input = document.createElement('input')
+            input.type = 'hidden'
+            input.name = key
+            input.value = payload[key]
+            form.appendChild(input)
+          }
         }
-      }
 
-      document.body.appendChild(form)
-      form.submit()
+        document.body.appendChild(form)
+        form.submit()
+      } else {
+        toast.error('Could not retrieve payment session configuration')
+      }
     } catch (err) {
       toast.error(err.response?.data?.message || err.message || 'Payment initiation failed')
     } finally {
@@ -279,7 +274,6 @@ export default function CheckoutPage() {
     <div className="min-h-screen bg-gray-50">
       <Navbar />
       <div className="max-w-4xl mx-auto px-6 py-10">
-        {/* Step Indicator */}
         <div className="flex items-center justify-center mb-10">
           {STEPS.map((s, i) => (
             <div key={s} className="flex items-center">
@@ -297,10 +291,8 @@ export default function CheckoutPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Form Area */}
           <div className="md:col-span-2">
             <AnimatePresence mode="wait">
-              {/* Step 0: Shipping */}
               {step === 0 && (
                 <motion.div key="ship" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
                   className="card p-7"
@@ -336,7 +328,6 @@ export default function CheckoutPage() {
                 </motion.div>
               )}
 
-              {/* Step 1: Payment Method Selection */}
               {step === 1 && (
                 <motion.div key="pay" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
                   className="card p-7"
@@ -345,7 +336,6 @@ export default function CheckoutPage() {
                     Select Payment Method
                   </h2>
                   
-                  {/* Two payment selector cards */}
                   <div className="grid grid-cols-2 gap-4 mb-6">
                     <button
                       type="button"
@@ -422,7 +412,6 @@ export default function CheckoutPage() {
 
                   {payment.method === 'card' && (
                     <div>
-                      {/* Premium Interactive Credit Card Preview */}
                       <div className="relative w-full max-w-sm mx-auto h-44 bg-gradient-to-br from-gray-900 via-blue-950 to-indigo-950 rounded-2xl p-5 text-white shadow-xl mb-6 overflow-hidden flex flex-col justify-between select-none">
                         <div className="absolute -right-10 -top-10 w-40 h-40 bg-brand-primary/20 rounded-full blur-2xl pointer-events-none" />
                         <div className="flex justify-between items-center z-10">
@@ -532,7 +521,6 @@ export default function CheckoutPage() {
                 </motion.div>
               )}
 
-              {/* Step 2: Confirmation */}
               {step === 2 && (
                 <motion.div key="done" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
                   className="card p-10 text-center"
@@ -548,25 +536,8 @@ export default function CheckoutPage() {
                     </>
                   ) : (
                     <>
-                      <p className="text-gray-500 mb-4 text-sm">Your online order has been successfully placed!</p>
-                      <div className="bg-blue-50/70 border border-blue-100 rounded-xl p-5 text-left max-w-md mx-auto mb-6">
-                        <h4 className="font-bold text-gray-900 text-xs uppercase tracking-wider mb-2">Bank Transfer Details</h4>
-                        <div className="space-y-1.5 text-xs text-gray-700">
-                          <div className="flex justify-between">
-                            <span className="text-gray-400">Bank:</span>
-                            <span className="font-semibold text-gray-900">Meezan Bank</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-400">Account Number:</span>
-                            <span className="font-mono font-bold text-brand-primary">00300114199651</span>
-                          </div>
-                          <div className="flex justify-between border-t pt-1.5 mt-1.5">
-                            <span className="text-gray-400 font-semibold">Total Amount:</span>
-                            <span className="font-bold text-brand-primary">Rs. {grandTotal.toLocaleString()}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <p className="text-xs text-gray-400 mb-8">Please complete the transfer of Rs. {grandTotal.toLocaleString()} to the Meezan Bank account above to finalize your payment.</p>
+                      <p className="text-gray-500 mb-4 text-sm">Your online payment was successful and order has been processed!</p>
+                      <p className="text-xs text-gray-400 mb-8">Thank you for purchasing via Smart AI platform.</p>
                     </>
                   )}
                   {orderId && <p className="text-xs font-mono text-gray-400 mb-6 font-semibold">Order ID: {orderId}</p>}
@@ -576,7 +547,6 @@ export default function CheckoutPage() {
             </AnimatePresence>
           </div>
 
-          {/* Order Summary Sidebar */}
           <div className="card p-6 h-fit">
             <h3 className="font-display font-bold text-lg mb-4">Summary</h3>
             <div className="space-y-3 mb-4">
