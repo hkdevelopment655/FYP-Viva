@@ -6,20 +6,19 @@ import {
   initiatePayFastPayment, 
   verifyPayment 
 } from '../controllers/paymentController.js';
-import { protect } from '../middleware/authMiddleware.js'; // Agar aap auth use kar rahe hain to apna exact middleware check kar lein
 
 const router = express.Router();
 
 // Base routes for orders
 router.route('/')
-  .post(protect, createOrder)
-  .get(protect, getOrders);
+  .post(createOrder)
+  .get(getOrders);
 
 router.route('/:id')
-  .get(protect, getOrderById);
+  .get(getOrderById);
 
 // PayFast Payment Gateway routes
-router.post('/initiate', protect, initiatePayFastPayment);
-router.post('/verify', protect, verifyPayment);
+router.post('/initiate', initiatePayFastPayment);
+router.post('/verify', verifyPayment);
 
 export default router;
