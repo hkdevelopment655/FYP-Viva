@@ -72,16 +72,13 @@ export const initiatePayFastPayment = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
-    // .env se keys read karein ya phir fallback demo credentials check karein
+    // Explicitly fallback to correct working sandbox credentials if env is missing
     const merchantId = process.env.PAYFAST_MERCHANT_ID || '10049693';
     const merchantKey = process.env.PAYFAST_MERCHANT_KEY || 'tk3co8d1lltic';
 
-    console.log("Using Merchant ID:", merchantId);
-    console.log("Using Merchant Key:", merchantKey);
-
     const payfastData = {
-      merchant_id: merchantId,
-      merchant_key: merchantKey,
+      merchant_id: merchantId.trim(),
+      merchant_key: merchantKey.trim(),
       return_url: `${process.env.CLIENT_URL || 'http://localhost:5173'}/checkout?step=2&orderId=${orderId}` + (order.groupCartId ? `&groupCartId=${order.groupCartId}` : ''),
       cancel_url: `${process.env.CLIENT_URL || 'http://localhost:5173'}/checkout` + (order.groupCartId ? `?groupCartId=${order.groupCartId}` : ''),
       m_payment_id: orderId.toString(),
@@ -89,29 +86,38 @@ export const initiatePayFastPayment = async (req, res) => {
       item_name: `SmartAI-Order-${orderId}`
     };
 
-    // MD5 signature array structure
+    // CRITICAL FIX: Only include keys that ACTUALLY exist in payfastData and follow strict order
     const orderedKeys = [
-      'merchant_id', 'merchant_key', 'return_url', 'cancel_url', 'notify_url',
-      'name_first', 'name_last', 'email_address', 'cell_number',
-      'm_payment_id', 'amount', 'item_name', 'item_description'
+      'merchant_id',
+      'merchant_key',
+      'return_url',
+      'cancel_url',
+      'm_payment_id',
+      'amount',
+      'item_name'
     ];
 
     let signatureString = '';
     orderedKeys.forEach((key) => {
       if (payfastData[key] !== undefined && payfastData[key] !== '') {
-        const encodedValue = encodeURIComponent(payfastData[key])
+        const encodedValue = encodeURIComponent(payfastData[key].toString())
           .replace(/%20/g, '+')
           .replace(/%[0-9a-fA-F]{2}/g, (match) => match.toUpperCase());
         signatureString += `${key}=${encodedValue}&`;
       }
     });
 
+    // Remove trailing '&'
     if (signatureString.endsWith('&')) {
       signatureString = signatureString.slice(0, -1);
     }
 
+    // Generate MD5 signature hash
     const signature = crypto.createHash('md5').update(signatureString).digest('hex');
     payfastData.signature = signature;
+
+    console.log("Generated Signature String:", signatureString);
+    console.log("Final Hash Signature:", signature);
 
     res.json({
       success: true,
@@ -145,36 +151,6 @@ export const verifyPayment = async (req, res) => {
     } else {
       res.json({ success: false, message: 'Payment not completed' });
     }
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-export const initiatePayment = async (req, res) => {
-  try {
-    const { orderId, amount, phone, method } = req.body;
-    
-    const order = await Order.findById(orderId);
-    if (!order) {
-      return res.status(404).json({ success: false, message: 'Order not found' });
-    }
-
-    res.json({
-      success: true,
-      message: 'Payment initiated successfully (mock).',
-      orderId,
-      amount,
-      method: method || 'easypaisa'
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-export const paymentCallback = async (req, res) => {
-  try {
-    console.log('Payment callback received:', req.body);
-    res.json({ success: true, message: 'Callback received successfully' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
